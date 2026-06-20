@@ -66,7 +66,7 @@ export function createRoom({ code, hostId, hostName, sessionToken, settings }) {
     speakerOrder: [],
     speakerIndex: -1,
     previousUndercoverIds: [],
-    kickedPlayerIds: [],
+    blockedPlayerIds: [],
     result: null
   };
   addPlayer(room, { id: hostId, name: hostName, sessionToken });
@@ -75,7 +75,7 @@ export function createRoom({ code, hostId, hostName, sessionToken, settings }) {
 
 export function addPlayer(room, { id, name, sessionToken }) {
   if (!id) throw new Error("缺少玩家身份");
-  if (room.kickedPlayerIds?.includes(id)) throw new Error("你已被房主移出房间");
+  if (room.blockedPlayerIds?.includes(id)) throw new Error("你已被房主拉黑");
 
   const existing = room.players.find((player) => player.id === id);
   if (existing) {
@@ -128,25 +128,35 @@ export function removeOrDisconnectPlayer(room, playerId) {
   ensureHost(room);
 }
 
-export function kickPlayer(room, hostId, targetId) {
+export function kickPlayer(room, hostId, targetId, { blacklist = false } = {}) {
   requireKickableRoom(room, hostId, targetId);
   const target = room.players.find((player) => player.id === targetId);
   if (!target) throw new Error("玩家不存在");
   if (target.id === hostId) throw new Error("不能移除自己");
 
-  room.kickedPlayerIds = [...new Set([...(room.kickedPlayerIds ?? []), target.id])];
+  const removedSpeakerIndex = room.speakerOrder.findIndex((id) => id === target.id);
+  const removedCurrentSpeaker =
+    room.status === "playing" &&
+    room.phase === "describe" &&
+    room.currentSpeakerId === target.id;
+
+  if (blacklist) {
+    room.blockedPlayerIds = [...new Set([...(room.blockedPlayerIds ?? []), target.id])];
+  }
   room.players = room.players.filter((player) => player.id !== target.id);
   room.speakerOrder = room.speakerOrder.filter((id) => id !== target.id);
-  if (room.currentSpeakerId === target.id) {
-    room.currentSpeakerId = null;
-    room.speakerIndex = -1;
-  }
   if (room.primaryHostId === target.id) {
     transferPrimaryHost(room, target.id);
   }
   ensureHost(room);
 
   if (room.status === "playing") {
+    if (removedCurrentSpeaker) {
+      advanceAfterRemovedSpeaker(room, removedSpeakerIndex);
+    } else if (room.currentSpeakerId) {
+      room.speakerIndex = room.speakerOrder.findIndex((id) => id === room.currentSpeakerId);
+    }
+
     clearVotes(room);
     const result = evaluateWin(room);
     if (result) {
@@ -203,6 +213,22 @@ function transferPrimaryHost(room, previousHostId) {
     null;
   room.primaryHostId = nextPrimary?.id ?? null;
   room.hostId = nextPrimary?.id ?? null;
+}
+
+function advanceAfterRemovedSpeaker(room, removedSpeakerIndex) {
+  const nextSpeakerId = room.speakerOrder
+    .slice(Math.max(removedSpeakerIndex, 0))
+    .find((id) => room.players.some((player) => player.id === id && player.alive));
+
+  if (nextSpeakerId) {
+    room.currentSpeakerId = nextSpeakerId;
+    room.speakerIndex = room.speakerOrder.findIndex((id) => id === nextSpeakerId);
+  } else {
+    room.phase = "discussion";
+    room.currentSpeakerId = null;
+    room.speakerIndex = -1;
+    addSystemMessage(room, "本轮描述结束，可以讨论或发起投票。");
+  }
 }
 
 export function startGame(room, rng = Math.random) {

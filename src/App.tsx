@@ -26,6 +26,7 @@ const ROOM_SESSIONS_KEY = "undercover.roomSessions";
 interface StoredRoomSession {
   playerId: string;
   sessionToken: string;
+  blocked?: boolean;
 }
 
 function readRoomSessions(): Record<string, StoredRoomSession> {
@@ -120,6 +121,15 @@ export default function App() {
         return;
       }
       sessionRef.current = session;
+      if (session.blocked) {
+        if (currentRoom) {
+          roomRef.current = null;
+          sessionRef.current = null;
+          setRoom(null);
+          setPrivateState(null);
+        }
+        return;
+      }
 
       socket.emit(
         "joinRoom",
@@ -133,7 +143,11 @@ export default function App() {
           sessionRef.current = null;
           setRoom(null);
           setPrivateState(null);
-          removeRoomSession(code);
+          if (ack?.error?.includes("拉黑")) {
+            saveRoomSession(code, { ...session, blocked: true });
+          } else if (!session.blocked) {
+            removeRoomSession(code);
+          }
           localStorage.removeItem(LAST_ROOM_KEY);
           window.history.replaceState(null, "", window.location.pathname);
           setToast(ack?.error || "重新加入房间失败");
@@ -149,9 +163,16 @@ export default function App() {
     });
     socket.on("privateState", (state: PrivateState) => setPrivateState(state));
     socket.on("errorMessage", (message: string) => setToast(message));
-    socket.on("kicked", ({ reason }: { reason?: string }) => {
+    socket.on("kicked", ({ reason, blacklisted }: { reason?: string; blacklisted?: boolean }) => {
       const code = roomRef.current?.code || localStorage.getItem(LAST_ROOM_KEY);
-      if (code) removeRoomSession(code);
+      if (code) {
+        const session = sessionRef.current || getRoomSession(code);
+        if (blacklisted && session) {
+          saveRoomSession(code, { ...session, blocked: true });
+        } else {
+          removeRoomSession(code);
+        }
+      }
       roomRef.current = null;
       sessionRef.current = null;
       setRoom(null);
@@ -809,10 +830,16 @@ function RoomManagement({
               <strong>{player.name}</strong>
               <span>{player.connected ? "在线" : "离线"}</span>
             </div>
-            <button onClick={() => run("kickPlayer", { targetId: player.id })}>
-              <UserMinus size={15} />
-              移除
-            </button>
+            <div className="managed-actions">
+              <button onClick={() => run("kickPlayer", { targetId: player.id })}>
+                <UserMinus size={15} />
+                移除
+              </button>
+              <button onClick={() => run("kickPlayer", { targetId: player.id, blacklist: true })}>
+                <XCircle size={15} />
+                拉黑
+              </button>
+            </div>
           </div>
         ))}
       </div>

@@ -528,7 +528,7 @@ label {
 .managed-player {
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 76px;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   padding: 8px 0;
@@ -543,6 +543,11 @@ label {
   min-width: 0;
   display: grid;
   gap: 2px;
+}
+
+.managed-actions {
+  grid-template-columns: repeat(2, 64px);
+  gap: 6px;
 }
 
 .managed-player strong {

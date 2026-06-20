@@ -86,8 +86,8 @@ io.on("connection", (socket) => {
       const existingPlayer = playerId
         ? room.players.find((item) => item.id === playerId)
         : null;
-      if (playerId && !existingPlayer && room.kickedPlayerIds?.includes(playerId)) {
-        throw new Error("你已被房主移出房间");
+      if (playerId && !existingPlayer && room.blockedPlayerIds?.includes(playerId)) {
+        throw new Error("你已被房主拉黑");
       }
 
       const nextPlayerId = existingPlayer ? playerId : createPlayerId();
@@ -117,9 +117,15 @@ io.on("connection", (socket) => {
 
   socket.on("kickPlayer", (payload, reply) => {
     withRoom(socket, reply, ({ room, playerId }) => {
-      const removed = kickPlayer(room, playerId, safeId(payload?.targetId));
-      detachPlayerSockets(room, removed.id, "你已被房主移出房间。");
-      addRoomMessage(room, `房主移除了 ${removed.name}。`);
+      const blacklist = Boolean(payload?.blacklist);
+      const removed = kickPlayer(room, playerId, safeId(payload?.targetId), { blacklist });
+      detachPlayerSockets(
+        room,
+        removed.id,
+        blacklist ? "你已被房主拉黑并移出房间。" : "你已被房主移出房间。",
+        { blacklisted: blacklist }
+      );
+      addRoomMessage(room, `房主${blacklist ? "拉黑并移除了" : "移除了"} ${removed.name}。`);
       if (room.players.length === 0) rooms.delete(room.code);
       else broadcastRoom(room);
     });
@@ -237,10 +243,10 @@ function attachSocket(socket, room, playerId) {
   if (player) player.connected = true;
 }
 
-function detachPlayerSockets(room, playerId, reason) {
+function detachPlayerSockets(room, playerId, reason, data = {}) {
   for (const [socketId, entry] of [...socketIndex]) {
     if (entry.code !== room.code || entry.playerId !== playerId) continue;
-    io.to(socketId).emit("kicked", { reason });
+    io.to(socketId).emit("kicked", { reason, ...data });
     io.sockets.sockets.get(socketId)?.leave(room.code);
     socketIndex.delete(socketId);
   }

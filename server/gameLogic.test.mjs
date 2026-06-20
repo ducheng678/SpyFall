@@ -397,6 +397,8 @@ describe("game rules", () => {
     const lobbyRemoved = kickPlayer(lobbyRoom, "p1", "p4");
     expect(lobbyRemoved.name).toBe("玩家4");
     expect(lobbyRoom.players.map((player) => player.id)).toEqual(["p1", "p2", "p3"]);
+    addPlayer(lobbyRoom, { id: "p4", name: "玩家4", sessionToken: "token-p4" });
+    expect(lobbyRoom.players.map((player) => player.id)).toEqual(["p1", "p2", "p3", "p4"]);
 
     const finishedRoom = roomWithPlayers({
       mode: "classic",
@@ -443,6 +445,52 @@ describe("game rules", () => {
     expect(room.players.some((player) => player.id === "p3")).toBe(false);
     expect(room.phase).toBe("discussion");
     expect(room.players.every((player) => player.voteTargetId === null)).toBe(true);
+  });
+
+  it("continues speaker order after kicking the current speaker", () => {
+    const room = roomWithPlayers({
+      mode: "classic",
+      playerCount: 4,
+      undercoverCount: 1,
+      customCivilianWord: "牛奶",
+      customUndercoverWord: "豆浆"
+    });
+    startGame(room, () => 0);
+    for (const player of room.players) player.role = "civilian";
+    room.players.find((player) => player.id === "p3").role = "undercover";
+    room.speakerOrder = ["p1", "p2", "p3", "p4"];
+    room.currentSpeakerId = "p2";
+    room.speakerIndex = 1;
+    room.players.find((player) => player.id === "p2").connected = false;
+
+    kickPlayer(room, "p1", "p2");
+
+    expect(room.phase).toBe("describe");
+    expect(room.currentSpeakerId).toBe("p3");
+    expect(room.speakerIndex).toBe(1);
+  });
+
+  it("moves to discussion after kicking the last current speaker", () => {
+    const room = roomWithPlayers({
+      mode: "classic",
+      playerCount: 5,
+      undercoverCount: 1,
+      customCivilianWord: "牛奶",
+      customUndercoverWord: "豆浆"
+    });
+    startGame(room, () => 0);
+    for (const player of room.players) player.role = "civilian";
+    room.players.find((player) => player.id === "p2").role = "undercover";
+    room.speakerOrder = ["p1", "p2", "p3", "p4", "p5"];
+    room.currentSpeakerId = "p5";
+    room.speakerIndex = 4;
+    room.players.find((player) => player.id === "p5").connected = false;
+
+    kickPlayer(room, "p1", "p5");
+
+    expect(room.status).toBe("playing");
+    expect(room.phase).toBe("discussion");
+    expect(room.currentSpeakerId).toBeNull();
   });
 
   it("lets the host update target player count within room limits", () => {
@@ -529,7 +577,7 @@ describe("game rules", () => {
     expect(room.hostId).toBe("p2");
   });
 
-  it("lets a temporary host kick the disconnected primary host", () => {
+  it("lets a temporary host kick the disconnected primary host without blocking rejoin", () => {
     const room = roomWithPlayers({
       mode: "classic",
       playerCount: 3,
@@ -545,11 +593,27 @@ describe("game rules", () => {
     expect(room.primaryHostId).toBe("p2");
     expect(room.hostId).toBe("p2");
     expect(room.players.some((player) => player.id === "p1")).toBe(false);
+
+    addPlayer(room, { id: "p1", name: "玩家1", sessionToken: "token-p1" });
+
+    expect(room.players.some((player) => player.id === "p1")).toBe(true);
+    expect(room.primaryHostId).toBe("p2");
+    expect(room.hostId).toBe("p2");
+  });
+
+  it("blocks rejoin after a player is blacklisted", () => {
+    const room = roomWithPlayers({
+      mode: "classic",
+      playerCount: 3,
+      undercoverCount: 1
+    });
+
+    kickPlayer(room, "p1", "p3", { blacklist: true });
+
+    expect(room.blockedPlayerIds).toEqual(["p3"]);
     expect(() =>
-      addPlayer(room, { id: "p1", name: "玩家1", sessionToken: "token-p1" })
-    ).toThrow(
-      "你已被房主移出房间"
-    );
+      addPlayer(room, { id: "p3", name: "玩家3", sessionToken: "token-p3" })
+    ).toThrow("你已被房主拉黑");
   });
 
   it("requires the private session token to rejoin an existing player", () => {
