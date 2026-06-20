@@ -19,19 +19,47 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
 import type { Ack, GameMode, PrivateState, RoomState } from "./types";
 
-const PLAYER_ID_KEY = "undercover.playerId";
 const PLAYER_NAME_KEY = "undercover.playerName";
 const LAST_ROOM_KEY = "undercover.lastRoom";
+const ROOM_SESSIONS_KEY = "undercover.roomSessions";
 
-function getPlayerId() {
-  const existing = localStorage.getItem(PLAYER_ID_KEY);
-  if (existing) return existing;
-  const next =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  localStorage.setItem(PLAYER_ID_KEY, next);
-  return next;
+interface StoredRoomSession {
+  playerId: string;
+  sessionToken: string;
+}
+
+function readRoomSessions(): Record<string, StoredRoomSession> {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(ROOM_SESSIONS_KEY) || "{}");
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function getRoomSession(code: string) {
+  return readRoomSessions()[code] || null;
+}
+
+function saveRoomSession(code: string, session: StoredRoomSession) {
+  localStorage.setItem(
+    ROOM_SESSIONS_KEY,
+    JSON.stringify({ ...readRoomSessions(), [code]: session })
+  );
+}
+
+function removeRoomSession(code: string) {
+  const sessions = readRoomSessions();
+  delete sessions[code];
+  localStorage.setItem(ROOM_SESSIONS_KEY, JSON.stringify(sessions));
+}
+
+function roomCodeFromUrl() {
+  return onlyRoomCodeDigits(new URLSearchParams(window.location.search).get("room") || "");
+}
+
+function preferredRoomCode(currentRoom: RoomState | null) {
+  return roomCodeFromUrl() || currentRoom?.code || localStorage.getItem(LAST_ROOM_KEY) || "";
 }
 
 function maxUndercoverCount(playerCount: number) {
@@ -63,8 +91,8 @@ function onlyRoomCodeDigits(value: string) {
 
 export default function App() {
   const socketRef = useRef<Socket | null>(null);
-  const playerIdRef = useRef(getPlayerId());
   const roomRef = useRef<RoomState | null>(null);
+  const sessionRef = useRef<StoredRoomSession | null>(null);
   const [connected, setConnected] = useState(false);
   const [room, setRoom] = useState<RoomState | null>(null);
   const [privateState, setPrivateState] = useState<PrivateState | null>(null);
@@ -78,23 +106,34 @@ export default function App() {
     socket.on("connect", () => {
       setConnected(true);
       const currentRoom = roomRef.current;
-      const code = currentRoom?.code || localStorage.getItem(LAST_ROOM_KEY);
+      const code = preferredRoomCode(currentRoom);
       if (!code) return;
 
-      const name =
-        localStorage.getItem(PLAYER_NAME_KEY) ||
-        currentRoom?.players.find((player) => player.id === playerIdRef.current)?.name ||
-        "";
-      if (!name) return;
+      const session = getRoomSession(code);
+      if (!session) {
+        if (currentRoom) {
+          roomRef.current = null;
+          sessionRef.current = null;
+          setRoom(null);
+          setPrivateState(null);
+        }
+        return;
+      }
+      sessionRef.current = session;
 
       socket.emit(
         "joinRoom",
-        { playerId: playerIdRef.current, name, code },
+        { code, playerId: session.playerId, sessionToken: session.sessionToken },
         (ack: Ack) => {
-          if (ack?.ok) return;
+          if (ack?.ok) {
+            rememberSession(ack);
+            return;
+          }
           roomRef.current = null;
+          sessionRef.current = null;
           setRoom(null);
           setPrivateState(null);
+          removeRoomSession(code);
           localStorage.removeItem(LAST_ROOM_KEY);
           window.history.replaceState(null, "", window.location.pathname);
           setToast(ack?.error || "重新加入房间失败");
@@ -111,7 +150,10 @@ export default function App() {
     socket.on("privateState", (state: PrivateState) => setPrivateState(state));
     socket.on("errorMessage", (message: string) => setToast(message));
     socket.on("kicked", ({ reason }: { reason?: string }) => {
+      const code = roomRef.current?.code || localStorage.getItem(LAST_ROOM_KEY);
+      if (code) removeRoomSession(code);
       roomRef.current = null;
+      sessionRef.current = null;
       setRoom(null);
       setPrivateState(null);
       localStorage.removeItem(LAST_ROOM_KEY);
@@ -141,13 +183,24 @@ export default function App() {
 
   const run = async (event: string, payload: unknown = {}) => {
     const ack = await emitAck(event, payload);
+    if (ack.ok) rememberSession(ack);
     if (!ack.ok) setToast(ack.error || "操作失败");
     return ack;
   };
 
+  const rememberSession = (ack: Ack) => {
+    if (!ack.code || !ack.playerId || !ack.sessionToken) return;
+    const session = { playerId: ack.playerId, sessionToken: ack.sessionToken };
+    saveRoomSession(ack.code, session);
+    sessionRef.current = session;
+  };
+
   const leaveRoom = async () => {
+    const code = roomRef.current?.code;
     await run("leaveRoom");
+    if (code) removeRoomSession(code);
     roomRef.current = null;
+    sessionRef.current = null;
     setRoom(null);
     setPrivateState(null);
     localStorage.removeItem(LAST_ROOM_KEY);
@@ -168,7 +221,7 @@ export default function App() {
       </header>
 
       {!room ? (
-        <EntryView playerId={playerIdRef.current} run={run} setToast={setToast} />
+        <EntryView run={run} setToast={setToast} />
       ) : (
         <GameView
           room={room}
@@ -185,14 +238,12 @@ export default function App() {
 }
 
 interface EntryViewProps {
-  playerId: string;
   run: (event: string, payload?: unknown) => Promise<Ack>;
   setToast: (message: string) => void;
 }
 
-function EntryView({ playerId, run, setToast }: EntryViewProps) {
-  const params = new URLSearchParams(window.location.search);
-  const roomFromUrl = params.get("room") || localStorage.getItem(LAST_ROOM_KEY) || "";
+function EntryView({ run, setToast }: EntryViewProps) {
+  const roomFromUrl = roomCodeFromUrl() || localStorage.getItem(LAST_ROOM_KEY) || "";
   const [name, setName] = useState(localStorage.getItem(PLAYER_NAME_KEY) || "");
   const [joinCode, setJoinCode] = useState(roomFromUrl);
   const [customRoomCode, setCustomRoomCode] = useState("");
@@ -214,7 +265,6 @@ function EntryView({ playerId, run, setToast }: EntryViewProps) {
     event.preventDefault();
     rememberName();
     const ack = await run("createRoom", {
-      playerId,
       name,
       code: customRoomCode,
       settings: {
@@ -231,8 +281,9 @@ function EntryView({ playerId, run, setToast }: EntryViewProps) {
   const joinRoom = async (event: FormEvent) => {
     event.preventDefault();
     rememberName();
+    const session = getRoomSession(joinCode);
     await run("joinRoom", {
-      playerId,
+      ...(session ? { playerId: session.playerId, sessionToken: session.sessionToken } : {}),
       name,
       code: joinCode
     });
@@ -683,7 +734,10 @@ function HostControls({
           退出
         </button>
       </div>
-      {isHost && (room.status === "lobby" || room.status === "finished") && (
+      {isHost &&
+        (room.status === "lobby" ||
+          room.status === "finished" ||
+          room.players.some((player) => !player.host && !player.connected)) && (
         <RoomManagement room={room} run={run} />
       )}
       <p className="small-line">存活 {liveCount} 人</p>
@@ -698,6 +752,7 @@ function RoomManagement({
   room: RoomState;
   run: (event: string, payload?: unknown) => Promise<Ack>;
 }) {
+  const canEditCount = room.status === "lobby" || room.status === "finished";
   const minPlayerCount = Math.max(3, room.players.length);
   const [targetCount, setTargetCount] = useState(room.settings.playerCount);
 
@@ -706,7 +761,9 @@ function RoomManagement({
   }, [room.settings.playerCount]);
 
   const countInvalid = targetCount < minPlayerCount || targetCount > 12;
-  const removablePlayers = room.players.filter((player) => !player.host);
+  const removablePlayers = room.players.filter(
+    (player) => !player.host && (canEditCount || !player.connected)
+  );
 
   return (
     <div className="room-management">
@@ -715,29 +772,35 @@ function RoomManagement({
         <h3>房间管理</h3>
       </div>
 
-      <div className="count-editor">
-        <label>
-          目标人数
-          <input
-            type="number"
-            min={minPlayerCount}
-            max={12}
-            value={targetCount}
-            onChange={(event) => setTargetCount(Number(event.target.value))}
-          />
-        </label>
-        <button
-          disabled={countInvalid || targetCount === room.settings.playerCount}
-          onClick={() => run("updatePlayerCount", { playerCount: targetCount })}
-        >
-          <CheckCircle2 size={16} />
-          更新
-        </button>
-      </div>
+      {canEditCount ? (
+        <>
+          <div className="count-editor">
+            <label>
+              目标人数
+              <input
+                type="number"
+                min={minPlayerCount}
+                max={12}
+                value={targetCount}
+                onChange={(event) => setTargetCount(Number(event.target.value))}
+              />
+            </label>
+            <button
+              disabled={countInvalid || targetCount === room.settings.playerCount}
+              onClick={() => run("updatePlayerCount", { playerCount: targetCount })}
+            >
+              <CheckCircle2 size={16} />
+              更新
+            </button>
+          </div>
 
-      <p className="small-line">
-        当前 {room.players.length} 人，目标 {room.settings.playerCount} 人
-      </p>
+          <p className="small-line">
+            当前 {room.players.length} 人，目标 {room.settings.playerCount} 人
+          </p>
+        </>
+      ) : (
+        <p className="small-line">游戏中只能移除掉线玩家</p>
+      )}
 
       <div className="managed-players">
         {removablePlayers.map((player) => (

@@ -1,5 +1,6 @@
 import express from "express";
 import http from "node:http";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Server } from "socket.io";
@@ -58,17 +59,17 @@ app.get("*", (_req, res) => {
 io.on("connection", (socket) => {
   socket.on("createRoom", (payload, reply) => {
     try {
-      const playerId = safeId(payload?.playerId);
+      const playerId = createPlayerId();
+      const sessionToken = createSessionToken();
       const name = normalizeName(payload?.name);
-      if (!playerId) throw new Error("缺少玩家身份");
       if (!name) throw new Error("请输入昵称");
 
       const settings = normalizeSettings(payload?.settings);
       const code = resolveCreateRoomCode(payload?.code);
-      const room = createRoom({ code, hostId: playerId, hostName: name, settings });
+      const room = createRoom({ code, hostId: playerId, hostName: name, sessionToken, settings });
       rooms.set(code, room);
       attachSocket(socket, room, playerId);
-      replyOk(reply, { code });
+      replyOk(reply, { code, playerId, sessionToken });
       broadcastRoom(room);
     } catch (error) {
       replyError(reply, error);
@@ -80,13 +81,26 @@ io.on("connection", (socket) => {
       const code = requireValidRoomCode(payload?.code);
       const room = requireRoom(code);
       const playerId = safeId(payload?.playerId);
+      const sessionToken = safeToken(payload?.sessionToken);
       const name = normalizeName(payload?.name);
-      const wasExisting = room.players.some((item) => item.id === playerId);
-      const player = addPlayer(room, { id: playerId, name });
+      const existingPlayer = playerId
+        ? room.players.find((item) => item.id === playerId)
+        : null;
+      if (playerId && !existingPlayer && room.kickedPlayerIds?.includes(playerId)) {
+        throw new Error("你已被房主移出房间");
+      }
+
+      const nextPlayerId = existingPlayer ? playerId : createPlayerId();
+      const nextSessionToken = existingPlayer ? sessionToken : createSessionToken();
+      const player = addPlayer(room, {
+        id: nextPlayerId,
+        name,
+        sessionToken: nextSessionToken
+      });
       player.connected = true;
       attachSocket(socket, room, player.id);
-      if (!wasExisting) addRoomMessage(room, `${player.name} 加入了房间。`);
-      replyOk(reply, { code });
+      if (!existingPlayer) addRoomMessage(room, `${player.name} 加入了房间。`);
+      replyOk(reply, { code, playerId: player.id, sessionToken: player.sessionToken });
       broadcastRoom(room);
     } catch (error) {
       replyError(reply, error);
@@ -258,6 +272,18 @@ function resolveCreateRoomCode(value) {
 
 function safeId(value) {
   return String(value ?? "").trim().slice(0, 80);
+}
+
+function safeToken(value) {
+  return String(value ?? "").trim().slice(0, 120);
+}
+
+function createPlayerId() {
+  return randomUUID();
+}
+
+function createSessionToken() {
+  return randomUUID();
 }
 
 function requireRoom(code) {

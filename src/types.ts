@@ -70,5 +70,7 @@ export interface PrivateState {
 export interface Ack {
   ok: boolean;
   code?: string;
+  playerId?: string;
+  sessionToken?: string;
   error?: string;
 }

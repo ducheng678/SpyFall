@@ -49,7 +49,7 @@ export function normalizeSettings(input = {}) {
   };
 }
 
-export function createRoom({ code, hostId, hostName, settings }) {
+export function createRoom({ code, hostId, hostName, sessionToken, settings }) {
   const room = {
     code,
     createdAt: Date.now(),
@@ -69,24 +69,29 @@ export function createRoom({ code, hostId, hostName, settings }) {
     kickedPlayerIds: [],
     result: null
   };
-  addPlayer(room, { id: hostId, name: hostName });
+  addPlayer(room, { id: hostId, name: hostName, sessionToken });
   return room;
 }
 
-export function addPlayer(room, { id, name }) {
+export function addPlayer(room, { id, name, sessionToken }) {
   if (!id) throw new Error("缺少玩家身份");
   if (room.kickedPlayerIds?.includes(id)) throw new Error("你已被房主移出房间");
-  const cleanName = normalizeName(name);
-  if (!cleanName) throw new Error("请输入昵称");
 
   const existing = room.players.find((player) => player.id === id);
   if (existing) {
+    if (!sessionToken || existing.sessionToken !== sessionToken) {
+      throw new Error("玩家身份验证失败");
+    }
+    const cleanName = normalizeName(name);
     existing.name = existing.name || cleanName;
     existing.connected = true;
     ensureHost(room);
     return existing;
   }
 
+  if (!sessionToken) throw new Error("缺少玩家凭证");
+  const cleanName = normalizeName(name);
+  if (!cleanName) throw new Error("请输入昵称");
   if (room.status !== "lobby") throw new Error("游戏已经开始，不能加入新玩家");
   if (room.players.length >= room.settings.playerCount) throw new Error("房间已满");
   if (room.players.some((player) => player.name === cleanName)) {
@@ -101,7 +106,8 @@ export function addPlayer(room, { id, name }) {
     joinedAt: Date.now(),
     role: null,
     word: null,
-    voteTargetId: null
+    voteTargetId: null,
+    sessionToken
   };
   room.players.push(player);
   ensureHost(room);
@@ -123,17 +129,34 @@ export function removeOrDisconnectPlayer(room, playerId) {
 }
 
 export function kickPlayer(room, hostId, targetId) {
-  requireManageableRoom(room, hostId);
+  requireKickableRoom(room, hostId, targetId);
   const target = room.players.find((player) => player.id === targetId);
   if (!target) throw new Error("玩家不存在");
   if (target.id === hostId) throw new Error("不能移除自己");
 
   room.kickedPlayerIds = [...new Set([...(room.kickedPlayerIds ?? []), target.id])];
   room.players = room.players.filter((player) => player.id !== target.id);
+  room.speakerOrder = room.speakerOrder.filter((id) => id !== target.id);
+  if (room.currentSpeakerId === target.id) {
+    room.currentSpeakerId = null;
+    room.speakerIndex = -1;
+  }
   if (room.primaryHostId === target.id) {
     transferPrimaryHost(room, target.id);
   }
   ensureHost(room);
+
+  if (room.status === "playing") {
+    clearVotes(room);
+    const result = evaluateWin(room);
+    if (result) {
+      finishGame(room, result);
+    } else if (room.phase === "voting") {
+      room.phase = "discussion";
+      room.currentSpeakerId = null;
+      addSystemMessage(room, "有掉线玩家被移除，本轮投票已重置。");
+    }
+  }
   return target;
 }
 
@@ -630,6 +653,16 @@ function requireManageableRoom(room, playerId) {
   if (room.status !== "lobby" && room.status !== "finished") {
     throw new Error("游戏进行中不能管理房间");
   }
+}
+
+function requireKickableRoom(room, hostId, targetId) {
+  if (room.hostId !== hostId) throw new Error("只有房主可以操作");
+  if (targetId === hostId) return;
+  if (room.status === "lobby" || room.status === "finished") return;
+  if (room.status !== "playing") throw new Error("不能管理房间");
+
+  const target = room.players.find((player) => player.id === targetId);
+  if (target?.connected) throw new Error("游戏中只能移除掉线玩家");
 }
 
 function addSystemMessage(room, text) {

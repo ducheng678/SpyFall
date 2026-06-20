@@ -28,10 +28,15 @@ function roomWithPlayers(settings, count = settings.playerCount) {
     code: "ABCDE",
     hostId: "p1",
     hostName: "玩家1",
+    sessionToken: "token-p1",
     settings
   });
   for (let index = 2; index <= count; index += 1) {
-    addPlayer(room, { id: `p${index}`, name: `玩家${index}` });
+    addPlayer(room, {
+      id: `p${index}`,
+      name: `玩家${index}`,
+      sessionToken: `token-p${index}`
+    });
   }
   return room;
 }
@@ -405,7 +410,7 @@ describe("game rules", () => {
     expect(finishedRoom.players.some((player) => player.id === "p2")).toBe(false);
   });
 
-  it("blocks kicking during play, by non-hosts, or against yourself", () => {
+  it("blocks kicking online players during play, by non-hosts, or against yourself", () => {
     const room = roomWithPlayers({
       mode: "classic",
       playerCount: 4,
@@ -416,7 +421,28 @@ describe("game rules", () => {
     expect(() => kickPlayer(room, "p1", "p1")).toThrow("不能移除自己");
 
     startGame(room, () => 0);
-    expect(() => kickPlayer(room, "p1", "p2")).toThrow("游戏进行中不能管理房间");
+    expect(() => kickPlayer(room, "p1", "p2")).toThrow("游戏中只能移除掉线玩家");
+  });
+
+  it("lets the host kick disconnected players during play and resets active votes", () => {
+    const room = roomWithPlayers({
+      mode: "classic",
+      playerCount: 5,
+      undercoverCount: 1,
+      customCivilianWord: "牛奶",
+      customUndercoverWord: "豆浆"
+    });
+    startGame(room, () => 0);
+    room.players.find((player) => player.id === "p3").connected = false;
+    startVote(room, "p1");
+    castVote(room, "p1", "p2");
+    castVote(room, "p2", "p3");
+
+    kickPlayer(room, "p1", "p3");
+
+    expect(room.players.some((player) => player.id === "p3")).toBe(false);
+    expect(room.phase).toBe("discussion");
+    expect(room.players.every((player) => player.voteTargetId === null)).toBe(true);
   });
 
   it("lets the host update target player count within room limits", () => {
@@ -476,7 +502,7 @@ describe("game rules", () => {
     expect(room.primaryHostId).toBe("p1");
     expect(room.hostId).toBe("p2");
 
-    addPlayer(room, { id: "p1", name: "玩家1" });
+    addPlayer(room, { id: "p1", name: "玩家1", sessionToken: "token-p1" });
 
     expect(room.primaryHostId).toBe("p1");
     expect(room.hostId).toBe("p1");
@@ -497,7 +523,7 @@ describe("game rules", () => {
     expect(room.primaryHostId).toBe("p2");
     expect(room.hostId).toBe("p2");
 
-    addPlayer(room, { id: "p1", name: "玩家1" });
+    addPlayer(room, { id: "p1", name: "玩家1", sessionToken: "token-p1" });
     expect(room.players.find((player) => player.id === "p1").connected).toBe(true);
     expect(room.primaryHostId).toBe("p2");
     expect(room.hostId).toBe("p2");
@@ -519,9 +545,29 @@ describe("game rules", () => {
     expect(room.primaryHostId).toBe("p2");
     expect(room.hostId).toBe("p2");
     expect(room.players.some((player) => player.id === "p1")).toBe(false);
-    expect(() => addPlayer(room, { id: "p1", name: "玩家1" })).toThrow(
+    expect(() =>
+      addPlayer(room, { id: "p1", name: "玩家1", sessionToken: "token-p1" })
+    ).toThrow(
       "你已被房主移出房间"
     );
+  });
+
+  it("requires the private session token to rejoin an existing player", () => {
+    const room = roomWithPlayers({
+      mode: "classic",
+      playerCount: 3,
+      undercoverCount: 1
+    });
+    room.players.find((player) => player.id === "p1").connected = false;
+    ensureHost(room);
+
+    expect(() =>
+      addPlayer(room, { id: "p1", name: "冒充者", sessionToken: "wrong-token" })
+    ).toThrow("玩家身份验证失败");
+    expect(room.hostId).toBe("p2");
+
+    addPlayer(room, { id: "p1", name: "玩家1", sessionToken: "token-p1" });
+    expect(room.hostId).toBe("p1");
   });
 });
 
