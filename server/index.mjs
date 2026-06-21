@@ -46,9 +46,20 @@ const io = new Server(server, {
 
 const rooms = new Map();
 const socketIndex = new Map();
+const activityLog = [];
+const MAX_ACTIVITY_EVENTS = 500;
 
 app.get("/health", (_req, res) => {
   res.json({ ok: true, rooms: rooms.size });
+});
+
+app.get("/activity", (req, res) => {
+  const limit = clampActivityLimit(req.query.limit);
+  res.json({
+    ok: true,
+    total: activityLog.length,
+    events: activityLog.slice(-limit).reverse()
+  });
 });
 
 app.use(express.static(distDir));
@@ -69,6 +80,12 @@ io.on("connection", (socket) => {
       const room = createRoom({ code, hostId: playerId, hostName: name, sessionToken, settings });
       rooms.set(code, room);
       attachSocket(socket, room, playerId);
+      recordActivity("room.created", room, {
+        playerId,
+        playerName: name,
+        mode: room.settings.mode,
+        playerCount: room.settings.playerCount
+      });
       replyOk(reply, { code, playerId, sessionToken });
       broadcastRoom(room);
     } catch (error) {
@@ -99,7 +116,18 @@ io.on("connection", (socket) => {
       });
       player.connected = true;
       attachSocket(socket, room, player.id);
-      if (!existingPlayer) addRoomMessage(room, `${player.name} 加入了房间。`);
+      if (!existingPlayer) {
+        addRoomMessage(room, `${player.name} 加入了房间。`);
+        recordActivity("player.joined", room, {
+          playerId: player.id,
+          playerName: player.name
+        });
+      } else {
+        recordActivity("player.reconnected", room, {
+          playerId: player.id,
+          playerName: player.name
+        });
+      }
       replyOk(reply, { code, playerId: player.id, sessionToken: player.sessionToken });
       broadcastRoom(room);
     } catch (error) {
@@ -111,6 +139,12 @@ io.on("connection", (socket) => {
     withRoom(socket, reply, ({ room, playerId }) => {
       requireHost(room, playerId);
       startGame(room);
+      recordActivity("game.started", room, {
+        playerId,
+        playerName: playerName(room, playerId),
+        mode: room.settings.mode,
+        playerCount: room.players.length
+      });
       broadcastRoom(room);
     });
   });
@@ -126,6 +160,12 @@ io.on("connection", (socket) => {
         { blacklisted: blacklist }
       );
       addRoomMessage(room, `房主${blacklist ? "拉黑并移除了" : "移除了"} ${removed.name}。`);
+      recordActivity(blacklist ? "player.blacklisted" : "player.kicked", room, {
+        playerId: removed.id,
+        playerName: removed.name,
+        actorId: playerId,
+        actorName: playerName(room, playerId)
+      });
       if (room.players.length === 0) rooms.delete(room.code);
       else broadcastRoom(room);
     });
@@ -135,6 +175,11 @@ io.on("connection", (socket) => {
     withRoom(socket, reply, ({ room, playerId }) => {
       updatePlayerCount(room, playerId, payload?.playerCount);
       addRoomMessage(room, `房间人数调整为 ${room.settings.playerCount} 人。`);
+      recordActivity("room.player_count_updated", room, {
+        playerId,
+        playerName: playerName(room, playerId),
+        playerCount: room.settings.playerCount
+      });
       broadcastRoom(room);
     });
   });
@@ -150,6 +195,11 @@ io.on("connection", (socket) => {
   socket.on("startVote", (_payload, reply) => {
     withRoom(socket, reply, ({ room, playerId }) => {
       startVote(room, playerId);
+      recordActivity("vote.started", room, {
+        playerId,
+        playerName: playerName(room, playerId),
+        phase: room.phase
+      });
       broadcastRoom(room);
     });
   });
@@ -157,6 +207,14 @@ io.on("connection", (socket) => {
   socket.on("castVote", (payload, reply) => {
     withRoom(socket, reply, ({ room, playerId }) => {
       castVote(room, playerId, payload?.targetId);
+      recordActivity("vote.cast", room, {
+        playerId,
+        playerName: playerName(room, playerId),
+        targetId: safeId(payload?.targetId),
+        targetName: playerName(room, safeId(payload?.targetId)),
+        phase: room.phase,
+        status: room.status
+      });
       broadcastRoom(room);
     });
   });
@@ -164,6 +222,11 @@ io.on("connection", (socket) => {
   socket.on("guessWord", (payload, reply) => {
     withRoom(socket, reply, ({ room, playerId }) => {
       guessWord(room, playerId, payload?.guess);
+      recordActivity("blank.guessed", room, {
+        playerId,
+        playerName: playerName(room, playerId),
+        status: room.status
+      });
       broadcastRoom(room);
     });
   });
@@ -179,6 +242,12 @@ io.on("connection", (socket) => {
     withRoom(socket, reply, ({ room, playerId }) => {
       requireHost(room, playerId);
       restartGame(room);
+      recordActivity("game.restarted", room, {
+        playerId,
+        playerName: playerName(room, playerId),
+        mode: room.settings.mode,
+        playerCount: room.players.length
+      });
       broadcastRoom(room);
     });
   });
@@ -187,6 +256,11 @@ io.on("connection", (socket) => {
     withRoom(socket, reply, ({ room, playerId }) => {
       requireHost(room, playerId);
       finishGameByHost(room);
+      recordActivity("game.ended", room, {
+        playerId,
+        playerName: playerName(room, playerId),
+        reason: "host"
+      });
       broadcastRoom(room);
     });
   });
@@ -198,10 +272,19 @@ io.on("connection", (socket) => {
     socket.leave(entry.code);
     socketIndex.delete(socket.id);
     if (room) {
+      const leavingPlayer = room.players.find((item) => item.id === entry.playerId);
       removeOrDisconnectPlayer(room, entry.playerId);
       addRoomMessage(room, "有玩家离开了房间。");
-      if (room.players.length === 0) rooms.delete(room.code);
-      else broadcastRoom(room);
+      recordActivity("player.left", room, {
+        playerId: entry.playerId,
+        playerName: leavingPlayer?.name ?? null
+      });
+      if (room.players.length === 0) {
+        recordActivity("room.deleted", room, { reason: "empty" });
+        rooms.delete(room.code);
+      } else {
+        broadcastRoom(room);
+      }
     }
     replyOk(reply);
   });
@@ -216,6 +299,10 @@ io.on("connection", (socket) => {
     const player = room.players.find((item) => item.id === entry.playerId);
     if (player) player.connected = false;
     ensureHost(room);
+    recordActivity("player.disconnected", room, {
+      playerId: entry.playerId,
+      playerName: player?.name ?? null
+    });
     broadcastRoom(room);
   });
 });
@@ -300,6 +387,35 @@ function requireRoom(code) {
 
 function requireHost(room, playerId) {
   if (room.hostId !== playerId) throw new Error("只有房主可以操作");
+}
+
+function recordActivity(type, room, details = {}) {
+  const event = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    type,
+    roomCode: room.code,
+    createdAt: new Date().toISOString(),
+    activeRooms: rooms.size,
+    roomStatus: room.status,
+    roomPhase: room.phase,
+    players: room.players.length,
+    connectedPlayers: room.players.filter((player) => player.connected).length,
+    details
+  };
+  activityLog.push(event);
+  if (activityLog.length > MAX_ACTIVITY_EVENTS) {
+    activityLog.splice(0, activityLog.length - MAX_ACTIVITY_EVENTS);
+  }
+}
+
+function playerName(room, playerId) {
+  return room.players.find((player) => player.id === playerId)?.name ?? null;
+}
+
+function clampActivityLimit(value) {
+  const limit = Number.parseInt(value, 10);
+  if (Number.isNaN(limit)) return 100;
+  return Math.max(1, Math.min(500, limit));
 }
 
 function replyOk(reply, data = {}) {
