@@ -35,6 +35,7 @@ const __dirname = path.dirname(__filename);
 const rootDir = path.resolve(__dirname, "..");
 const distDir = path.join(rootDir, "dist");
 const port = Number(process.env.PORT || 3000);
+const adminToken = String(process.env.ADMIN_TOKEN || "").trim();
 
 const app = express();
 const server = http.createServer(app);
@@ -54,6 +55,14 @@ app.get("/health", (_req, res) => {
 });
 
 app.get("/activity", (req, res) => {
+  if (!adminToken) {
+    res.status(404).json({ ok: false, error: "Not found" });
+    return;
+  }
+  if (!isAuthorizedAdminRequest(req)) {
+    res.status(401).json({ ok: false, error: "Unauthorized" });
+    return;
+  }
   const limit = clampActivityLimit(req.query.limit);
   res.json({
     ok: true,
@@ -387,6 +396,16 @@ function requireRoom(code) {
 
 function requireHost(room, playerId) {
   if (room.hostId !== playerId) throw new Error("只有房主可以操作");
+}
+
+function isAuthorizedAdminRequest(req) {
+  const header = String(req.get("authorization") || "").trim();
+  const bearerPrefix = "Bearer ";
+  const bearerToken = header.startsWith(bearerPrefix)
+    ? header.slice(bearerPrefix.length).trim()
+    : "";
+  const queryToken = String(req.query.token || "").trim();
+  return bearerToken === adminToken || queryToken === adminToken;
 }
 
 function recordActivity(type, room, details = {}) {
