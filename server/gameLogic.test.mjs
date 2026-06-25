@@ -513,6 +513,40 @@ describe("game rules", () => {
     expect(room.players.some((player) => player.id === "p2")).toBe(false);
   });
 
+  it("allows a player to join again after leaving a finished room", () => {
+    const room = roomWithPlayers({
+      mode: "classic",
+      playerCount: 4,
+      undercoverCount: 1,
+      customCivilianWord: "牛奶",
+      customUndercoverWord: "豆浆"
+    });
+    startGame(room, () => 0);
+    room.status = "finished";
+    room.phase = "finished";
+
+    removeOrDisconnectPlayer(room, "p2");
+    addPlayer(room, { id: "p2-new", name: "玩家2", sessionToken: "token-p2-new" });
+
+    expect(room.players.find((player) => player.id === "p2-new").name).toBe("玩家2");
+  });
+
+  it("still blocks new players from joining during play", () => {
+    const room = roomWithPlayers({
+      mode: "classic",
+      playerCount: 4,
+      undercoverCount: 1,
+      customCivilianWord: "牛奶",
+      customUndercoverWord: "豆浆"
+    });
+    startGame(room, () => 0);
+    removeOrDisconnectPlayer(room, "p2");
+
+    expect(() =>
+      addPlayer(room, { id: "p5", name: "玩家5", sessionToken: "token-p5" })
+    ).toThrow("游戏进行中，不能加入新玩家");
+  });
+
   it("lets the host kick a non-host player in lobby and finished rooms", () => {
     const lobbyRoom = roomWithPlayers({
       mode: "classic",

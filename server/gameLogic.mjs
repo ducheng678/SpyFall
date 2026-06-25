@@ -93,7 +93,7 @@ export function addPlayer(room, { id, name, sessionToken }) {
   if (!sessionToken) throw new Error("缺少玩家凭证");
   const cleanName = normalizeName(name);
   if (!cleanName) throw new Error("请输入昵称");
-  if (room.status !== "lobby") throw new Error("游戏已经开始，不能加入新玩家");
+  if (room.status === "playing") throw new Error("游戏进行中，不能加入新玩家");
   if (room.players.length >= room.settings.playerCount) throw new Error("房间已满");
   if (room.players.some((player) => player.name === cleanName)) {
     throw new Error("昵称已被使用");

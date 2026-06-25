@@ -248,14 +248,16 @@ export default function App() {
   };
 
   const leaveRoom = async () => {
-    const code = roomRef.current?.code;
+    const currentRoom = roomRef.current;
+    const code = currentRoom?.code;
+    const keepRejoinSession = currentRoom?.status === "playing" || currentRoom?.status === "finished";
     await run("leaveRoom");
-    if (code) removeRoomSession(code);
+    if (code && !keepRejoinSession) removeRoomSession(code);
     roomRef.current = null;
-    sessionRef.current = null;
+    if (!keepRejoinSession) sessionRef.current = null;
     setRoom(null);
     setPrivateState(null);
-    localStorage.removeItem(LAST_ROOM_KEY);
+    if (!keepRejoinSession) localStorage.removeItem(LAST_ROOM_KEY);
     window.history.replaceState(null, "", window.location.pathname);
   };
 
