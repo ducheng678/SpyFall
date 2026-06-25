@@ -457,9 +457,15 @@ function GameView({ room, privateState, run, leaveRoom, setToast }: GameViewProp
   const isHost = Boolean(privateState?.host);
   const alivePlayers = room.players.filter((player) => player.alive);
   const currentSpeaker = room.players.find((player) => player.id === room.currentSpeakerId);
-  const orderedPlayers = room.speakerOrder
-    .map((id) => room.players.find((player) => player.id === id))
-    .filter((player): player is RoomState["players"][number] => Boolean(player));
+  const displayPlayers = useMemo(() => {
+    if (!room.speakerOrder.length) return room.players;
+    const orderedIds = new Set(room.speakerOrder);
+    const orderedPlayers = room.speakerOrder
+      .map((id) => room.players.find((player) => player.id === id))
+      .filter((player): player is RoomState["players"][number] => Boolean(player));
+    const remainingPlayers = room.players.filter((player) => !orderedIds.has(player.id));
+    return [...orderedPlayers, ...remainingPlayers];
+  }, [room.players, room.speakerOrder]);
 
   useEffect(() => {
     messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight });
@@ -528,10 +534,8 @@ function GameView({ room, privateState, run, leaveRoom, setToast }: GameViewProp
 
         <WordPanel room={room} privateState={privateState} />
 
-        <SpeakerOrder players={orderedPlayers} currentSpeakerId={room.currentSpeakerId} />
-
         <section className="players-grid" aria-label="玩家列表">
-          {room.players.map((player) => (
+          {displayPlayers.map((player) => (
             <PlayerTile
               key={player.id}
               player={player}
@@ -632,31 +636,6 @@ function WordPanel({ room, privateState }: { room: RoomState; privateState: Priv
   );
 }
 
-function SpeakerOrder({
-  players,
-  currentSpeakerId
-}: {
-  players: RoomState["players"];
-  currentSpeakerId: string | null;
-}) {
-  if (!players.length) return null;
-  return (
-    <section className="speaker-order" aria-label="本轮发言顺序">
-      <p>本轮顺序</p>
-      <div>
-        {players.map((player, index) => (
-          <span
-            key={player.id}
-            className={player.id === currentSpeakerId ? "active" : ""}
-          >
-            {index + 1}. {player.name}
-          </span>
-        ))}
-      </div>
-    </section>
-  );
-}
-
 function PlayerTile({
   player,
   selected,
@@ -686,7 +665,12 @@ function PlayerTile({
         </h3>
         <p>{player.alive ? (player.connected ? "在线" : "离线") : "出局"}</p>
       </div>
-      {showVoted && <span className="voted-badge">已投</span>}
+      {(speaking || showVoted) && (
+        <div className="tile-badges">
+          {speaking && <span className="speaking-badge">发言中</span>}
+          {showVoted && <span className="voted-badge">已投</span>}
+        </div>
+      )}
       {canVote && (
         <button className="vote-button" onClick={onVote}>
           <Vote size={16} />

@@ -222,14 +222,13 @@ label {
 .game-stage {
   min-width: 0;
   display: grid;
-  grid-template-rows: auto auto auto auto 1fr;
+  grid-template-rows: auto auto auto 1fr;
   gap: 14px;
 }
 
 .room-strip,
 .status-band,
-.word-panel,
-.speaker-order {
+.word-panel {
   background: #ffffff;
   border: 1px solid #dce5df;
   border-radius: 8px;
@@ -331,42 +330,6 @@ label {
   line-height: 1.5;
 }
 
-.speaker-order {
-  display: grid;
-  gap: 8px;
-  padding: 12px 14px;
-}
-
-.speaker-order p {
-  margin: 0;
-  color: #6c7a75;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.speaker-order div {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.speaker-order span {
-  display: inline-flex;
-  align-items: center;
-  min-height: 30px;
-  padding: 0 10px;
-  border-radius: 999px;
-  color: #51605b;
-  background: #edf3ef;
-  font-size: 13px;
-  font-weight: 900;
-}
-
-.speaker-order span.active {
-  color: #ffffff;
-  background: #236268;
-}
-
 .players-grid {
   min-height: 0;
   display: grid;
@@ -394,7 +357,17 @@ label {
 }
 
 .player-tile.speaking {
-  box-shadow: 0 0 0 3px rgba(241, 184, 75, 0.35);
+  border-color: #d49215;
+  background: #fff8e6;
+  box-shadow:
+    0 0 0 4px rgba(241, 184, 75, 0.55),
+    0 16px 36px rgba(91, 63, 9, 0.18);
+  transform: translateY(-2px);
+}
+
+.player-tile.speaking .avatar {
+  color: #172026;
+  background: #f1b84b;
 }
 
 .player-tile.out {
@@ -432,10 +405,19 @@ label {
   font-weight: 800;
 }
 
-.voted-badge {
+.tile-badges {
   position: absolute;
   top: 8px;
   right: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  max-width: calc(100% - 16px);
+}
+
+.voted-badge,
+.speaking-badge {
   min-width: 44px;
   min-height: 24px;
   display: grid;
@@ -445,6 +427,11 @@ label {
   background: #236268;
   font-size: 12px;
   font-weight: 900;
+}
+
+.speaking-badge {
+  color: #172026;
+  background: #f1b84b;
 }
 
 .vote-button {
