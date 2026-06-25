@@ -93,17 +93,17 @@ export function addPlayer(room, { id, name, sessionToken }) {
   if (!sessionToken) throw new Error("缺少玩家凭证");
   const cleanName = normalizeName(name);
   if (!cleanName) throw new Error("请输入昵称");
-  if (room.status === "playing") throw new Error("游戏进行中，不能加入新玩家");
   if (room.players.length >= room.settings.playerCount) throw new Error("房间已满");
   if (room.players.some((player) => player.name === cleanName)) {
     throw new Error("昵称已被使用");
   }
+  const joinsDuringPlay = room.status === "playing";
 
   const player = {
     id,
     name: cleanName,
     connected: true,
-    alive: true,
+    alive: !joinsDuringPlay,
     joinedAt: Date.now(),
     role: null,
     word: null,
@@ -172,9 +172,13 @@ export function kickPlayer(room, hostId, targetId, { blacklist = false } = {}) {
 }
 
 export function updatePlayerCount(room, hostId, value) {
-  requireManageableRoom(room, hostId);
+  requirePlayerCountEditable(room, hostId);
   const playerCount = Number.parseInt(value, 10);
   if (Number.isNaN(playerCount)) throw new Error("请输入有效人数");
+
+  if (room.status === "playing" && playerCount <= room.settings.playerCount) {
+    throw new Error("游戏进行中只能增加人数");
+  }
 
   const minPlayerCount = Math.max(MIN_PLAYERS, room.players.length);
   if (playerCount < minPlayerCount) {
@@ -422,6 +426,7 @@ export function publicRoomState(room) {
       name: player.name,
       connected: player.connected,
       alive: player.alive,
+      waiting: room.status !== "lobby" && player.role === null,
       host: player.id === room.hostId,
       hasVoted: Boolean(player.voteTargetId)
     })),
@@ -447,6 +452,16 @@ export function privatePlayerState(room, playerId) {
 
   if (room.status === "lobby") {
     return { ...base, word: null, roleLabel: null, canGuess: false };
+  }
+
+  if (player.role === null) {
+    return {
+      ...base,
+      word: null,
+      roleLabel: "等待下局",
+      canGuess: false,
+      hint: "你将在下一局加入。"
+    };
   }
 
   if (room.settings.mode === MODES.CLASSIC) {
@@ -712,10 +727,10 @@ function assertPlaying(room) {
   if (room.status !== "playing") throw new Error("游戏未进行中");
 }
 
-function requireManageableRoom(room, playerId) {
+function requirePlayerCountEditable(room, playerId) {
   if (room.hostId !== playerId) throw new Error("只有房主可以操作");
-  if (room.status !== "lobby" && room.status !== "finished") {
-    throw new Error("游戏进行中不能管理房间");
+  if (room.status !== "lobby" && room.status !== "finished" && room.status !== "playing") {
+    throw new Error("不能管理房间");
   }
 }
 

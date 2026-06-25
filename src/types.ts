@@ -7,6 +7,7 @@ export interface PlayerState {
   name: string;
   connected: boolean;
   alive: boolean;
+  waiting: boolean;
   host: boolean;
   hasVoted: boolean;
 }

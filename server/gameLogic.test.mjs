@@ -531,7 +531,7 @@ describe("game rules", () => {
     expect(room.players.find((player) => player.id === "p2-new").name).toBe("玩家2");
   });
 
-  it("still blocks new players from joining during play", () => {
+  it("blocks new players from joining during play until the target count is increased", () => {
     const room = roomWithPlayers({
       mode: "classic",
       playerCount: 4,
@@ -544,7 +544,53 @@ describe("game rules", () => {
 
     expect(() =>
       addPlayer(room, { id: "p5", name: "玩家5", sessionToken: "token-p5" })
-    ).toThrow("游戏进行中，不能加入新玩家");
+    ).toThrow("房间已满");
+  });
+
+  it("lets new players join a playing room after increasing the target count", () => {
+    const room = roomWithPlayers({
+      mode: "classic",
+      playerCount: 4,
+      undercoverCount: 1,
+      customCivilianWord: "牛奶",
+      customUndercoverWord: "豆浆"
+    });
+    startGame(room, () => 0);
+    const currentSpeakerOrder = [...room.speakerOrder];
+
+    updatePlayerCount(room, "p1", 5);
+    const player = addPlayer(room, {
+      id: "p5",
+      name: "玩家5",
+      sessionToken: "token-p5"
+    });
+
+    expect(room.settings.playerCount).toBe(5);
+    expect(player.connected).toBe(true);
+    expect(player.alive).toBe(false);
+    expect(player.role).toBeNull();
+    expect(player.word).toBeNull();
+    expect(room.speakerOrder).toEqual(currentSpeakerOrder);
+    expect(publicRoomState(room).players.find((item) => item.id === "p5").waiting).toBe(true);
+    expect(privatePlayerState(room, "p5")).toMatchObject({
+      word: null,
+      roleLabel: "等待下局",
+      canGuess: false
+    });
+  });
+
+  it("only lets the host increase the target count during play", () => {
+    const room = roomWithPlayers({
+      mode: "classic",
+      playerCount: 4,
+      undercoverCount: 1,
+      customCivilianWord: "牛奶",
+      customUndercoverWord: "豆浆"
+    });
+    startGame(room, () => 0);
+
+    expect(() => updatePlayerCount(room, "p2", 5)).toThrow("只有房主可以操作");
+    expect(() => updatePlayerCount(room, "p1", 4)).toThrow("游戏进行中只能增加人数");
   });
 
   it("lets the host kick a non-host player in lobby and finished rooms", () => {

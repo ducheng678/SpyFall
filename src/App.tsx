@@ -721,7 +721,15 @@ function PlayerTile({
           {player.name}
           {player.host && <Crown size={14} />}
         </h3>
-        <p>{player.alive ? (player.connected ? "在线" : "离线") : "出局"}</p>
+        <p>
+          {player.waiting
+            ? "等待下局"
+            : player.alive
+              ? player.connected
+                ? "在线"
+                : "离线"
+              : "出局"}
+        </p>
       </div>
       {(speaking || showVoted) && (
         <div className="tile-badges">
@@ -802,6 +810,7 @@ function HostControls({
       {isHost &&
         (room.status === "lobby" ||
           room.status === "finished" ||
+          room.status === "playing" ||
           room.players.some((player) => !player.host && !player.connected)) && (
         <RoomManagement room={room} run={run} />
       )}
@@ -817,17 +826,26 @@ function RoomManagement({
   room: RoomState;
   run: (event: string, payload?: unknown) => Promise<Ack>;
 }) {
-  const canEditCount = room.status === "lobby" || room.status === "finished";
-  const minPlayerCount = Math.max(3, room.players.length);
+  const canEditCount =
+    room.status === "lobby" || room.status === "finished" || room.status === "playing";
+  const canRemoveOnline = room.status === "lobby" || room.status === "finished";
+  const canIncreaseDuringPlay = room.status === "playing" && room.settings.playerCount < 12;
+  const minPlayerCount =
+    room.status === "playing"
+      ? Math.min(12, room.settings.playerCount + 1)
+      : Math.max(3, room.players.length);
   const [targetCount, setTargetCount] = useState(room.settings.playerCount);
 
   useEffect(() => {
     setTargetCount(room.settings.playerCount);
   }, [room.settings.playerCount]);
 
-  const countInvalid = targetCount < minPlayerCount || targetCount > 12;
+  const countInvalid =
+    targetCount < minPlayerCount ||
+    targetCount > 12 ||
+    (room.status === "playing" && targetCount <= room.settings.playerCount);
   const removablePlayers = room.players.filter(
-    (player) => !player.host && (canEditCount || !player.connected)
+    (player) => !player.host && (canRemoveOnline || !player.connected)
   );
 
   return (
@@ -851,7 +869,11 @@ function RoomManagement({
               />
             </label>
             <button
-              disabled={countInvalid || targetCount === room.settings.playerCount}
+              disabled={
+                countInvalid ||
+                targetCount === room.settings.playerCount ||
+                (room.status === "playing" && !canIncreaseDuringPlay)
+              }
               onClick={() => run("updatePlayerCount", { playerCount: targetCount })}
             >
               <CheckCircle2 size={16} />
