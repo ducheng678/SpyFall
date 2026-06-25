@@ -487,6 +487,7 @@ function GameView({ room, privateState, run, leaveRoom, setToast }: GameViewProp
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const me = room.players.find((player) => player.id === privateState?.playerId);
   const isHost = Boolean(privateState?.host);
+  const meHasVoted = Boolean(me?.hasVoted);
   const alivePlayers = room.players.filter((player) => player.alive);
   const currentSpeaker = room.players.find((player) => player.id === room.currentSpeakerId);
   const voteResult = useMemo(
@@ -583,9 +584,16 @@ function GameView({ room, privateState, run, leaveRoom, setToast }: GameViewProp
               speaking={player.id === room.currentSpeakerId}
               showVoted={room.phase === "voting" && player.hasVoted}
               onVote={() => run("castVote", { targetId: player.id })}
+              showVoteButton={
+                room.phase === "voting" &&
+                Boolean(me?.alive) &&
+                player.alive &&
+                player.id !== me?.id
+              }
               canVote={
                 room.phase === "voting" &&
                 Boolean(me?.alive) &&
+                !meHasVoted &&
                 player.alive &&
                 player.id !== me?.id
               }
@@ -686,6 +694,7 @@ function PlayerTile({
   selected,
   speaking,
   showVoted,
+  showVoteButton,
   canVote,
   onVote
 }: {
@@ -693,6 +702,7 @@ function PlayerTile({
   selected: boolean;
   speaking: boolean;
   showVoted: boolean;
+  showVoteButton: boolean;
   canVote: boolean;
   onVote: () => void;
 }) {
@@ -716,8 +726,8 @@ function PlayerTile({
           {showVoted && <span className="voted-badge">已投</span>}
         </div>
       )}
-      {canVote && (
-        <button className="vote-button" onClick={onVote}>
+      {showVoteButton && (
+        <button className="vote-button" disabled={!canVote} onClick={onVote}>
           <Vote size={16} />
           投票
         </button>

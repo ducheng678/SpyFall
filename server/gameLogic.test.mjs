@@ -439,6 +439,24 @@ describe("game rules", () => {
     expect(state.players.find((player) => player.id === p2.id).hasVoted).toBe(false);
   });
 
+  it("does not let a player change their vote after voting", () => {
+    const room = roomWithPlayers({
+      mode: "classic",
+      playerCount: 4,
+      undercoverCount: 1,
+      customCivilianWord: "牛奶",
+      customUndercoverWord: "豆浆"
+    });
+    startGame(room, () => 0);
+    const [p1, p2, p3] = room.players;
+
+    startVote(room);
+    castVote(room, p1.id, p2.id);
+
+    expect(() => castVote(room, p1.id, p3.id)).toThrow("你已经投过票");
+    expect(p1.voteTargetId).toBe(p2.id);
+  });
+
   it("removes players from a finished room so previous undercover can be absent", () => {
     const room = roomWithPlayers({
       mode: "classic",

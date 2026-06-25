@@ -440,6 +440,13 @@ label {
   background: #236268;
 }
 
+.vote-button:disabled {
+  cursor: not-allowed;
+  color: #6c7a75;
+  background: #dce5df;
+  box-shadow: none;
+}
+
 .side-panel {
   min-width: 0;
   display: grid;

@@ -343,6 +343,7 @@ export function castVote(room, voterId, targetId, rng = Math.random) {
   if (room.phase !== "voting") throw new Error("当前不在投票阶段");
   const voter = requireAlivePlayer(room, voterId);
   const target = requireAlivePlayer(room, targetId);
+  if (voter.voteTargetId) throw new Error("你已经投过票");
   if (voter.id === target.id) throw new Error("不能投给自己");
   voter.voteTargetId = target.id;
 
