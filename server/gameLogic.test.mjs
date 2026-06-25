@@ -355,7 +355,7 @@ describe("game rules", () => {
     expect(room.players.every((player) => player.alive)).toBe(true);
   });
 
-  it("shows every player's vote after a resolved elimination", () => {
+  it("exposes every player's vote after a resolved elimination outside chat", () => {
     const room = roomWithPlayers({
       mode: "classic",
       playerCount: 4,
@@ -372,16 +372,22 @@ describe("game rules", () => {
     castVote(room, p3.id, p2.id);
     castVote(room, p4.id, p2.id);
 
-    expect(
-      room.messages.some(
-        (message) =>
-          message.text ===
-          "投票结果：玩家1 → 玩家2；玩家2 → 玩家1；玩家3 → 玩家2；玩家4 → 玩家2"
-      )
-    ).toBe(true);
+    expect(room.messages.some((message) => message.text.startsWith("投票结果："))).toBe(false);
+    expect(publicRoomState(room).lastVoteResult).toMatchObject({
+      round: 1,
+      tied: false,
+      eliminatedId: p2.id,
+      eliminatedName: "玩家2",
+      choices: [
+        { voterId: p1.id, voterName: "玩家1", targetId: p2.id, targetName: "玩家2" },
+        { voterId: p2.id, voterName: "玩家2", targetId: p1.id, targetName: "玩家1" },
+        { voterId: p3.id, voterName: "玩家3", targetId: p2.id, targetName: "玩家2" },
+        { voterId: p4.id, voterName: "玩家4", targetId: p2.id, targetName: "玩家2" }
+      ]
+    });
   });
 
-  it("shows every player's vote after a tie", () => {
+  it("exposes every player's vote after a tie outside chat", () => {
     const room = roomWithPlayers({
       mode: "classic",
       playerCount: 4,
@@ -398,9 +404,19 @@ describe("game rules", () => {
     castVote(room, p3.id, p4.id);
     castVote(room, p4.id, p3.id);
 
-    expect(room.messages.at(-2).text).toBe(
-      "投票结果：玩家1 → 玩家2；玩家2 → 玩家1；玩家3 → 玩家4；玩家4 → 玩家3"
-    );
+    expect(room.messages.some((message) => message.text.startsWith("投票结果："))).toBe(false);
+    expect(publicRoomState(room).lastVoteResult).toMatchObject({
+      round: 1,
+      tied: true,
+      eliminatedId: null,
+      eliminatedName: null,
+      choices: [
+        { voterId: p1.id, voterName: "玩家1", targetId: p2.id, targetName: "玩家2" },
+        { voterId: p2.id, voterName: "玩家2", targetId: p1.id, targetName: "玩家1" },
+        { voterId: p3.id, voterName: "玩家3", targetId: p4.id, targetName: "玩家4" },
+        { voterId: p4.id, voterName: "玩家4", targetId: p3.id, targetName: "玩家3" }
+      ]
+    });
     expect(room.messages.at(-1).text).toBe("投票平票，本轮无人出局。");
   });
 

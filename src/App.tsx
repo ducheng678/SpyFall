@@ -17,11 +17,12 @@ import {
 } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { io, Socket } from "socket.io-client";
-import type { Ack, GameMode, PrivateState, RoomState } from "./types";
+import type { Ack, ChatMessage, GameMode, PrivateState, RoomState, VoteResult } from "./types";
 
 const PLAYER_NAME_KEY = "undercover.playerName";
 const LAST_ROOM_KEY = "undercover.lastRoom";
 const ROOM_SESSIONS_KEY = "undercover.roomSessions";
+const VOTE_RESULT_PREFIX = "投票结果：";
 
 interface StoredRoomSession {
   playerId: string;
@@ -88,6 +89,36 @@ function roleName(role: string | null) {
 
 function onlyRoomCodeDigits(value: string) {
   return value.replace(/\D/g, "").slice(0, 4);
+}
+
+function isVoteResultMessage(message: ChatMessage) {
+  return message.type === "system" && message.text.startsWith(VOTE_RESULT_PREFIX);
+}
+
+function voteResultFromLegacyMessages(messages: ChatMessage[]): VoteResult | null {
+  const message = [...messages].reverse().find(isVoteResultMessage);
+  if (!message) return null;
+  return {
+    id: `legacy-${message.id}`,
+    round: 0,
+    createdAt: message.createdAt,
+    tied: false,
+    eliminatedId: null,
+    eliminatedName: null,
+    choices: message.text
+      .slice(VOTE_RESULT_PREFIX.length)
+      .split("；")
+      .filter(Boolean)
+      .map((item, index) => {
+        const [voterName, targetName] = item.split(" → ");
+        return {
+          voterId: `legacy-${message.id}-${index}`,
+          voterName: voterName?.trim() || `玩家${index + 1}`,
+          targetId: null,
+          targetName: targetName?.trim() || "未投"
+        };
+      })
+  };
 }
 
 export default function App() {
@@ -452,11 +483,20 @@ function GameView({ room, privateState, run, leaveRoom, setToast }: GameViewProp
   const [message, setMessage] = useState("");
   const [guess, setGuess] = useState("");
   const [resultOpen, setResultOpen] = useState(true);
+  const [dismissedVoteResultId, setDismissedVoteResultId] = useState<string | null>(null);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const me = room.players.find((player) => player.id === privateState?.playerId);
   const isHost = Boolean(privateState?.host);
   const alivePlayers = room.players.filter((player) => player.alive);
   const currentSpeaker = room.players.find((player) => player.id === room.currentSpeakerId);
+  const voteResult = useMemo(
+    () => room.lastVoteResult || voteResultFromLegacyMessages(room.messages),
+    [room.lastVoteResult, room.messages]
+  );
+  const visibleMessages = useMemo(
+    () => room.messages.filter((item) => !isVoteResultMessage(item)),
+    [room.messages]
+  );
   const displayPlayers = useMemo(() => {
     if (!room.speakerOrder.length) return room.players;
     const orderedIds = new Set(room.speakerOrder);
@@ -469,7 +509,7 @@ function GameView({ room, privateState, run, leaveRoom, setToast }: GameViewProp
 
   useEffect(() => {
     messagesRef.current?.scrollTo({ top: messagesRef.current.scrollHeight });
-  }, [room.messages.length]);
+  }, [visibleMessages.length]);
 
   useEffect(() => {
     setResultOpen(true);
@@ -588,7 +628,7 @@ function GameView({ room, privateState, run, leaveRoom, setToast }: GameViewProp
             <h2>聊天</h2>
           </div>
           <div className="messages" ref={messagesRef}>
-            {room.messages.map((item) => (
+            {visibleMessages.map((item) => (
               <div key={item.id} className={`message ${item.type}`}>
                 {item.type === "player" && <strong>{item.name}</strong>}
                 <span>{item.text}</span>
@@ -609,7 +649,12 @@ function GameView({ room, privateState, run, leaveRoom, setToast }: GameViewProp
         </section>
       </aside>
 
-      {room.result && resultOpen && (
+      {voteResult && dismissedVoteResultId !== voteResult.id ? (
+        <VoteResultOverlay
+          result={voteResult}
+          onClose={() => setDismissedVoteResultId(voteResult.id)}
+        />
+      ) : room.result && resultOpen && (
         <ResultOverlay result={room.result} onClose={() => setResultOpen(false)} />
       )}
     </main>
@@ -827,6 +872,42 @@ function RoomManagement({
           </div>
         ))}
       </div>
+    </div>
+  );
+}
+
+function VoteResultOverlay({
+  result,
+  onClose
+}: {
+  result: VoteResult;
+  onClose: () => void;
+}) {
+  return (
+    <div className="result-overlay">
+      <section className="result-panel vote-result-panel">
+        <h2>投票结果</h2>
+        <p>
+          {result.tied
+            ? "平票，本轮无人出局。"
+            : result.eliminatedName
+              ? `${result.eliminatedName} 被投票出局。`
+              : "本轮投票已结束。"}
+        </p>
+        <div className="vote-result-list">
+          {result.choices.map((choice) => (
+            <div key={choice.voterId}>
+              <strong>{choice.voterName}</strong>
+              <span>投给</span>
+              <strong>{choice.targetName}</strong>
+            </div>
+          ))}
+        </div>
+        <button className="secondary-action result-close" onClick={onClose}>
+          <CheckCircle2 size={18} />
+          返回房间
+        </button>
+      </section>
     </div>
   );
 }

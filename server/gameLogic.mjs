@@ -67,6 +67,7 @@ export function createRoom({ code, hostId, hostName, sessionToken, settings }) {
     speakerIndex: -1,
     previousUndercoverIds: [],
     blockedPlayerIds: [],
+    lastVoteResult: null,
     result: null
   };
   addPlayer(room, { id: hostId, name: hostName, sessionToken });
@@ -244,6 +245,7 @@ export function startGame(room, rng = Math.random) {
   room.phase = "describe";
   room.round = 1;
   room.result = null;
+  room.lastVoteResult = null;
   room.messages = [];
   room.speakerOrder = [];
   room.speakerIndex = -1;
@@ -319,6 +321,7 @@ export function startVote(room, playerId = room.hostId) {
   if (!canStartVote(room, playerId)) throw new Error("你不能发起投票");
   room.phase = "voting";
   room.currentSpeakerId = null;
+  room.lastVoteResult = null;
   clearVotes(room);
   addSystemMessage(
     room,
@@ -417,6 +420,7 @@ export function publicRoomState(room) {
     currentSpeakerId: room.currentSpeakerId,
     speakerOrder: room.speakerOrder,
     messages: room.messages.slice(-80),
+    lastVoteResult: room.lastVoteResult,
     result: room.result
   };
 }
@@ -471,9 +475,8 @@ function resolveVote(room, rng = Math.random) {
   const topCount = entries[0]?.[1] ?? 0;
   const topTargets = entries.filter(([, count]) => count === topCount);
 
-  addSystemMessage(room, voteSummaryText(room));
-
   if (topTargets.length !== 1) {
+    room.lastVoteResult = createVoteResult(room, { tied: true });
     clearVotes(room);
     room.phase = "discussion";
     addSystemMessage(room, "投票平票，本轮无人出局。");
@@ -481,6 +484,7 @@ function resolveVote(room, rng = Math.random) {
   }
 
   const target = room.players.find((player) => player.id === topTargets[0][0]);
+  room.lastVoteResult = createVoteResult(room, { eliminated: target });
   target.alive = false;
   addSystemMessage(room, `${target.name} 被投票出局。`);
   clearVotes(room);
@@ -665,15 +669,27 @@ function voteCounts(room) {
   return counts;
 }
 
-function voteSummaryText(room) {
+function createVoteResult(room, { tied = false, eliminated = null } = {}) {
   const playersById = new Map(room.players.map((player) => [player.id, player]));
-  const items = room.players
-    .filter((player) => player.alive)
-    .map((player) => {
-      const target = playersById.get(player.voteTargetId);
-      return `${player.name} → ${target?.name ?? "未投"}`;
-    });
-  return `投票结果：${items.join("；")}`;
+  return {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+    round: room.round,
+    createdAt: Date.now(),
+    tied,
+    eliminatedId: eliminated?.id ?? null,
+    eliminatedName: eliminated?.name ?? null,
+    choices: room.players
+      .filter((player) => player.alive)
+      .map((player) => {
+        const target = playersById.get(player.voteTargetId);
+        return {
+          voterId: player.id,
+          voterName: player.name,
+          targetId: target?.id ?? null,
+          targetName: target?.name ?? "未投"
+        };
+      })
+  };
 }
 
 function requireAlivePlayer(room, playerId) {

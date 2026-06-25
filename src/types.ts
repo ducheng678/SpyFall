@@ -37,6 +37,21 @@ export interface GameResult {
   };
 }
 
+export interface VoteResult {
+  id: string;
+  round: number;
+  createdAt: number;
+  tied: boolean;
+  eliminatedId: string | null;
+  eliminatedName: string | null;
+  choices: Array<{
+    voterId: string;
+    voterName: string;
+    targetId: string | null;
+    targetName: string;
+  }>;
+}
+
 export interface RoomState {
   code: string;
   hostId: string;
@@ -52,6 +67,7 @@ export interface RoomState {
   currentSpeakerId: string | null;
   speakerOrder: string[];
   messages: ChatMessage[];
+  lastVoteResult?: VoteResult | null;
   result: GameResult | null;
 }
 
