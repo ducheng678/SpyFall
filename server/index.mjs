@@ -195,8 +195,7 @@ io.on("connection", (socket) => {
 
   socket.on("advanceSpeaker", (_payload, reply) => {
     withRoom(socket, reply, ({ room, playerId }) => {
-      requireHost(room, playerId);
-      advanceSpeaker(room);
+      advanceSpeaker(room, playerId);
       broadcastRoom(room);
     });
   });

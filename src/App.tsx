@@ -606,6 +606,7 @@ function GameView({ room, privateState, run, leaveRoom, setToast }: GameViewProp
         <HostControls
           room={room}
           isHost={isHost}
+          canAdvanceSpeaker={Boolean(privateState?.canAdvanceSpeaker)}
           canStartVote={Boolean(privateState?.canStartVote)}
           liveCount={alivePlayers.length}
           run={run}
@@ -739,6 +740,7 @@ function PlayerTile({
 function HostControls({
   room,
   isHost,
+  canAdvanceSpeaker,
   canStartVote,
   liveCount,
   run,
@@ -746,6 +748,7 @@ function HostControls({
 }: {
   room: RoomState;
   isHost: boolean;
+  canAdvanceSpeaker: boolean;
   canStartVote: boolean;
   liveCount: number;
   run: (event: string, payload?: unknown) => Promise<Ack>;
@@ -769,7 +772,7 @@ function HostControls({
         )}
         {room.status === "playing" && (
           <>
-            <button disabled={!isHost} onClick={() => run("advanceSpeaker")}>
+            <button disabled={!canAdvanceSpeaker} onClick={() => run("advanceSpeaker")}>
               <CheckCircle2 size={17} />
               下一位
             </button>

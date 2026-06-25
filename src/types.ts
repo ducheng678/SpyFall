@@ -79,6 +79,7 @@ export interface PrivateState {
   word: string | null;
   roleLabel: string | null;
   canGuess: boolean;
+  canAdvanceSpeaker: boolean;
   canStartVote: boolean;
   hint?: string;
 }

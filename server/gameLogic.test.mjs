@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   addPlayer,
   advanceSpeaker,
+  canAdvanceSpeaker,
   castVote,
   canStartVote,
   createRoom,
@@ -83,6 +84,47 @@ describe("game rules", () => {
     advanceSpeaker(room);
     expect(room.phase).toBe("discussion");
     expect(room.currentSpeakerId).toBeNull();
+  });
+
+  it("lets the current speaker advance once but blocks non-current players", () => {
+    const room = roomWithPlayers({
+      mode: "classic",
+      playerCount: 4,
+      undercoverCount: 1,
+      customCivilianWord: "牛奶",
+      customUndercoverWord: "豆浆"
+    });
+    startGame(room, () => 0);
+    room.speakerOrder = ["p1", "p2", "p3", "p4"];
+    room.currentSpeakerId = "p2";
+    room.speakerIndex = 1;
+
+    expect(canAdvanceSpeaker(room, "p2")).toBe(true);
+    expect(canAdvanceSpeaker(room, "p3")).toBe(false);
+
+    advanceSpeaker(room, "p2");
+
+    expect(room.currentSpeakerId).toBe("p3");
+    expect(canAdvanceSpeaker(room, "p2")).toBe(false);
+    expect(() => advanceSpeaker(room, "p2")).toThrow("你不能切到下一位");
+  });
+
+  it("still lets the host advance speaker turns as a fallback", () => {
+    const room = roomWithPlayers({
+      mode: "classic",
+      playerCount: 4,
+      undercoverCount: 1,
+      customCivilianWord: "牛奶",
+      customUndercoverWord: "豆浆"
+    });
+    startGame(room, () => 0);
+    room.speakerOrder = ["p1", "p2", "p3", "p4"];
+    room.currentSpeakerId = "p2";
+    room.speakerIndex = 1;
+
+    expect(canAdvanceSpeaker(room, "p1")).toBe(true);
+    advanceSpeaker(room, "p1");
+    expect(room.currentSpeakerId).toBe("p3");
   });
 
   it("classic civilians win when all undercovers are voted out", () => {

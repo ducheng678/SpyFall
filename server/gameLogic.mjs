@@ -283,8 +283,9 @@ export function restartGame(room, rng = Math.random) {
   return startGame(room, rng);
 }
 
-export function advanceSpeaker(room) {
+export function advanceSpeaker(room, playerId = room.hostId) {
   assertPlaying(room);
+  if (!canAdvanceSpeaker(room, playerId)) throw new Error("你不能切到下一位");
   const orderedAliveIds = room.speakerOrder.filter((id) =>
     room.players.some((player) => player.id === id && player.alive)
   );
@@ -313,6 +314,12 @@ export function advanceSpeaker(room) {
     addSystemMessage(room, "本轮描述结束，可以讨论或发起投票。");
   }
   return room;
+}
+
+export function canAdvanceSpeaker(room, playerId) {
+  if (room.status !== "playing" || room.phase === "voting") return false;
+  if (room.hostId === playerId) return true;
+  return room.phase === "describe" && room.currentSpeakerId === playerId;
 }
 
 export function startVote(room, playerId = room.hostId) {
@@ -434,6 +441,7 @@ export function privatePlayerState(room, playerId) {
     host: player.id === room.hostId,
     mode: room.settings.mode,
     alive: player.alive,
+    canAdvanceSpeaker: canAdvanceSpeaker(room, playerId),
     canStartVote: room.status === "playing" && canStartVote(room, playerId)
   };
 
