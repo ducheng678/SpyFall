@@ -471,6 +471,8 @@ function resolveVote(room, rng = Math.random) {
   const topCount = entries[0]?.[1] ?? 0;
   const topTargets = entries.filter(([, count]) => count === topCount);
 
+  addSystemMessage(room, voteSummaryText(room));
+
   if (topTargets.length !== 1) {
     clearVotes(room);
     room.phase = "discussion";
@@ -661,6 +663,17 @@ function voteCounts(room) {
     }
   }
   return counts;
+}
+
+function voteSummaryText(room) {
+  const playersById = new Map(room.players.map((player) => [player.id, player]));
+  const items = room.players
+    .filter((player) => player.alive)
+    .map((player) => {
+      const target = playersById.get(player.voteTargetId);
+      return `${player.name} → ${target?.name ?? "未投"}`;
+    });
+  return `投票结果：${items.join("；")}`;
 }
 
 function requireAlivePlayer(room, playerId) {

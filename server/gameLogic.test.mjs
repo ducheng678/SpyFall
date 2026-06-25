@@ -355,6 +355,55 @@ describe("game rules", () => {
     expect(room.players.every((player) => player.alive)).toBe(true);
   });
 
+  it("shows every player's vote after a resolved elimination", () => {
+    const room = roomWithPlayers({
+      mode: "classic",
+      playerCount: 4,
+      undercoverCount: 1,
+      customCivilianWord: "牛奶",
+      customUndercoverWord: "豆浆"
+    });
+    startGame(room, () => 0);
+    const [p1, p2, p3, p4] = room.players;
+
+    startVote(room);
+    castVote(room, p1.id, p2.id);
+    castVote(room, p2.id, p1.id);
+    castVote(room, p3.id, p2.id);
+    castVote(room, p4.id, p2.id);
+
+    expect(
+      room.messages.some(
+        (message) =>
+          message.text ===
+          "投票结果：玩家1 → 玩家2；玩家2 → 玩家1；玩家3 → 玩家2；玩家4 → 玩家2"
+      )
+    ).toBe(true);
+  });
+
+  it("shows every player's vote after a tie", () => {
+    const room = roomWithPlayers({
+      mode: "classic",
+      playerCount: 4,
+      undercoverCount: 1,
+      customCivilianWord: "牛奶",
+      customUndercoverWord: "豆浆"
+    });
+    startGame(room, () => 0);
+    const [p1, p2, p3, p4] = room.players;
+
+    startVote(room);
+    castVote(room, p1.id, p2.id);
+    castVote(room, p2.id, p1.id);
+    castVote(room, p3.id, p4.id);
+    castVote(room, p4.id, p3.id);
+
+    expect(room.messages.at(-2).text).toBe(
+      "投票结果：玩家1 → 玩家2；玩家2 → 玩家1；玩家3 → 玩家4；玩家4 → 玩家3"
+    );
+    expect(room.messages.at(-1).text).toBe("投票平票，本轮无人出局。");
+  });
+
   it("only exposes who has voted, not vote counts", () => {
     const room = roomWithPlayers({
       mode: "classic",
