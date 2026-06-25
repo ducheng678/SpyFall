@@ -68,6 +68,7 @@ export function createRoom({ code, hostId, hostName, sessionToken, settings }) {
     previousUndercoverIds: [],
     blockedPlayerIds: [],
     lastVoteResult: null,
+    voteHistory: [],
     result: null
   };
   addPlayer(room, { id: hostId, name: hostName, sessionToken });
@@ -250,6 +251,7 @@ export function startGame(room, rng = Math.random) {
   room.round = 1;
   room.result = null;
   room.lastVoteResult = null;
+  room.voteHistory = [];
   room.messages = [];
   room.speakerOrder = [];
   room.speakerIndex = -1;
@@ -434,6 +436,7 @@ export function publicRoomState(room) {
     speakerOrder: room.speakerOrder,
     messages: room.messages.slice(-80),
     lastVoteResult: room.lastVoteResult,
+    voteHistory: room.voteHistory ?? [],
     result: room.result
   };
 }
@@ -500,7 +503,7 @@ function resolveVote(room, rng = Math.random) {
   const topTargets = entries.filter(([, count]) => count === topCount);
 
   if (topTargets.length !== 1) {
-    room.lastVoteResult = createVoteResult(room, { tied: true });
+    recordVoteResult(room, { tied: true });
     clearVotes(room);
     room.phase = "discussion";
     addSystemMessage(room, "投票平票，本轮无人出局。");
@@ -508,7 +511,7 @@ function resolveVote(room, rng = Math.random) {
   }
 
   const target = room.players.find((player) => player.id === topTargets[0][0]);
-  room.lastVoteResult = createVoteResult(room, { eliminated: target });
+  recordVoteResult(room, { eliminated: target });
   target.alive = false;
   addSystemMessage(room, `${target.name} 被投票出局。`);
   clearVotes(room);
@@ -691,6 +694,13 @@ function voteCounts(room) {
     }
   }
   return counts;
+}
+
+function recordVoteResult(room, options) {
+  const result = createVoteResult(room, options);
+  room.lastVoteResult = result;
+  room.voteHistory = [...(room.voteHistory ?? []), result];
+  return result;
 }
 
 function createVoteResult(room, { tied = false, eliminated = null } = {}) {

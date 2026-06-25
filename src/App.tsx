@@ -96,9 +96,14 @@ function isVoteResultMessage(message: ChatMessage) {
 }
 
 function voteResultFromLegacyMessages(messages: ChatMessage[]): VoteResult | null {
-  const message = [...messages].reverse().find(isVoteResultMessage);
-  if (!message) return null;
-  return {
+  const results = voteResultsFromLegacyMessages(messages);
+  return results[results.length - 1] ?? null;
+}
+
+function voteResultsFromLegacyMessages(messages: ChatMessage[]): VoteResult[] {
+  const voteMessages = messages.filter(isVoteResultMessage);
+  if (!voteMessages.length) return [];
+  return voteMessages.map((message) => ({
     id: `legacy-${message.id}`,
     round: 0,
     createdAt: message.createdAt,
@@ -118,7 +123,17 @@ function voteResultFromLegacyMessages(messages: ChatMessage[]): VoteResult | nul
           targetName: targetName?.trim() || "未投"
         };
       })
-  };
+  }));
+}
+
+function voteResultTitle(result: VoteResult) {
+  if (result.tied) return "平票，本轮无人出局。";
+  if (result.eliminatedName) return `${result.eliminatedName} 被投票出局。`;
+  return "本轮投票已结束。";
+}
+
+function voteResultRoundLabel(result: VoteResult) {
+  return result.round ? `第 ${result.round} 轮` : "投票";
 }
 
 export default function App() {
@@ -496,6 +511,13 @@ function GameView({ room, privateState, run, leaveRoom, setToast }: GameViewProp
     () => room.lastVoteResult || voteResultFromLegacyMessages(room.messages),
     [room.lastVoteResult, room.messages]
   );
+  const voteHistory = useMemo(
+    () =>
+      room.voteHistory?.length
+        ? room.voteHistory
+        : voteResultsFromLegacyMessages(room.messages),
+    [room.voteHistory, room.messages]
+  );
   const visibleMessages = useMemo(
     () => room.messages.filter((item) => !isVoteResultMessage(item)),
     [room.messages]
@@ -614,6 +636,8 @@ function GameView({ room, privateState, run, leaveRoom, setToast }: GameViewProp
           run={run}
           leaveRoom={leaveRoom}
         />
+
+        {voteHistory.length > 0 && <VoteHistoryPanel results={voteHistory} />}
 
         {privateState?.canGuess && room.status === "playing" && (
           <form className="guess-panel" onSubmit={submitGuess}>
@@ -913,6 +937,38 @@ function RoomManagement({
   );
 }
 
+function VoteHistoryPanel({ results }: { results: VoteResult[] }) {
+  const newestFirst = [...results].reverse();
+
+  return (
+    <section className="vote-history-panel">
+      <div className="panel-heading compact">
+        <Vote size={18} />
+        <h2>投票记录</h2>
+      </div>
+      <div className="vote-history-list">
+        {newestFirst.map((result, index) => (
+          <details key={result.id} open={index === 0}>
+            <summary>
+              <span>{voteResultRoundLabel(result)}</span>
+              <strong>{voteResultTitle(result)}</strong>
+            </summary>
+            <div className="vote-history-choices">
+              {result.choices.map((choice) => (
+                <div key={choice.voterId}>
+                  <strong>{choice.voterName}</strong>
+                  <span>投给</span>
+                  <strong>{choice.targetName}</strong>
+                </div>
+              ))}
+            </div>
+          </details>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function VoteResultOverlay({
   result,
   onClose
@@ -924,13 +980,7 @@ function VoteResultOverlay({
     <div className="result-overlay">
       <section className="result-panel vote-result-panel">
         <h2>投票结果</h2>
-        <p>
-          {result.tied
-            ? "平票，本轮无人出局。"
-            : result.eliminatedName
-              ? `${result.eliminatedName} 被投票出局。`
-              : "本轮投票已结束。"}
-        </p>
+        <p>{voteResultTitle(result)}</p>
         <div className="vote-result-list">
           {result.choices.map((choice) => (
             <div key={choice.voterId}>

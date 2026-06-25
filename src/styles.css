@@ -118,7 +118,8 @@ label {
 .entry-panel,
 .host-panel,
 .chat-panel,
-.guess-panel {
+.guess-panel,
+.vote-history-panel {
   background: #ffffff;
   border: 1px solid #dce5df;
   border-radius: 8px;
@@ -456,8 +457,80 @@ label {
 
 .host-panel,
 .guess-panel,
-.chat-panel {
+.chat-panel,
+.vote-history-panel {
   padding: 14px;
+}
+
+.vote-history-panel {
+  min-height: 0;
+}
+
+.vote-history-list {
+  max-height: 260px;
+  overflow-y: auto;
+  display: grid;
+  gap: 8px;
+}
+
+.vote-history-list details {
+  border-radius: 8px;
+  background: #edf3ef;
+}
+
+.vote-history-list summary {
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 9px 10px;
+  cursor: pointer;
+}
+
+.vote-history-list summary span {
+  color: #6c7a75;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.vote-history-list summary strong {
+  min-width: 0;
+  color: #173b3f;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.vote-history-choices {
+  display: grid;
+  gap: 6px;
+  padding: 0 10px 10px;
+}
+
+.vote-history-choices div {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #dce5df;
+}
+
+.vote-history-choices strong,
+.vote-history-choices span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.vote-history-choices span {
+  color: #6c7a75;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.vote-history-choices strong:last-child {
+  color: #173b3f;
+  text-align: right;
 }
 
 .control-grid {
@@ -767,11 +840,13 @@ label {
   .status-band,
   .word-panel,
   .reveal-words,
-  .vote-result-list div {
+  .vote-result-list div,
+  .vote-history-choices div {
     grid-template-columns: 1fr;
   }
 
-  .vote-result-list strong:last-child {
+  .vote-result-list strong:last-child,
+  .vote-history-choices strong:last-child {
     text-align: left;
   }
 

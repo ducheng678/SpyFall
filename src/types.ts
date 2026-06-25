@@ -69,6 +69,7 @@ export interface RoomState {
   speakerOrder: string[];
   messages: ChatMessage[];
   lastVoteResult?: VoteResult | null;
+  voteHistory?: VoteResult[];
   result: GameResult | null;
 }
 

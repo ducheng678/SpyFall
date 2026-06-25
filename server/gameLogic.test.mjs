@@ -415,6 +415,7 @@ describe("game rules", () => {
     castVote(room, p4.id, p2.id);
 
     expect(room.messages.some((message) => message.text.startsWith("投票结果："))).toBe(false);
+    expect(publicRoomState(room).voteHistory).toHaveLength(1);
     expect(publicRoomState(room).lastVoteResult).toMatchObject({
       round: 1,
       tied: false,
@@ -447,6 +448,7 @@ describe("game rules", () => {
     castVote(room, p4.id, p3.id);
 
     expect(room.messages.some((message) => message.text.startsWith("投票结果："))).toBe(false);
+    expect(publicRoomState(room).voteHistory).toHaveLength(1);
     expect(publicRoomState(room).lastVoteResult).toMatchObject({
       round: 1,
       tied: true,
@@ -460,6 +462,32 @@ describe("game rules", () => {
       ]
     });
     expect(room.messages.at(-1).text).toBe("投票平票，本轮无人出局。");
+  });
+
+  it("keeps vote history after a new vote starts and clears it for a new game", () => {
+    const room = roomWithPlayers({
+      mode: "classic",
+      playerCount: 4,
+      undercoverCount: 1,
+      customCivilianWord: "牛奶",
+      customUndercoverWord: "豆浆"
+    });
+    startGame(room, () => 0);
+    const [p1, p2, p3, p4] = room.players;
+
+    startVote(room);
+    castVote(room, p1.id, p2.id);
+    castVote(room, p2.id, p1.id);
+    castVote(room, p3.id, p4.id);
+    castVote(room, p4.id, p3.id);
+    expect(publicRoomState(room).voteHistory).toHaveLength(1);
+
+    startVote(room);
+    expect(publicRoomState(room).lastVoteResult).toBeNull();
+    expect(publicRoomState(room).voteHistory).toHaveLength(1);
+
+    restartGame(room, () => 0);
+    expect(publicRoomState(room).voteHistory).toEqual([]);
   });
 
   it("only exposes who has voted, not vote counts", () => {
