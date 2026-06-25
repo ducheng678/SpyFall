@@ -606,7 +606,7 @@ function GameView({ room, privateState, run, leaveRoom, setToast }: GameViewProp
         <HostControls
           room={room}
           isHost={isHost}
-          canAdvanceSpeaker={Boolean(privateState?.canAdvanceSpeaker)}
+          canAdvanceSpeaker={privateState?.canAdvanceSpeaker ?? isHost}
           canStartVote={Boolean(privateState?.canStartVote)}
           liveCount={alivePlayers.length}
           run={run}
